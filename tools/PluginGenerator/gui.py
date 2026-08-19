@@ -304,7 +304,7 @@ class PluginGeneratorApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('ATLAS Display Plugin Generator')
-        self.geometry('600x700')
+        self.geometry('600x750')
         self.resizable(True, True)
         
         # Create main frame with scrollbar
