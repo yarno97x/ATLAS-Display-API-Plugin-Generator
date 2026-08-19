@@ -2,6 +2,7 @@ import os
 import re
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import shutil
 
 
 CS_PROJ_TEMPLATE = r'''<Project Sdk="Microsoft.NET.Sdk">
@@ -22,34 +23,7 @@ CS_PROJ_TEMPLATE = r'''<Project Sdk="Microsoft.NET.Sdk">
     <PackageReference Include="MAT.OCS.Core" Version="*" />
     <PackageReference Include="System.Reactive" Version="4.4.1" />
   </ItemGroup>
-    <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-        <Exec Command="python &quot;$(SolutionDir)scripts\deploy.py&quot; &quot;$(TargetDir)$(TargetFileName)&quot;" />
-    </Target>
 </Project>
-'''
-
-DEPLOY_PY_TEMPLATE = r'''import sys
-import os
-import shutil
-
-
-def main():
-        if len(sys.argv) < 2:
-                print('Usage: deploy.py <path-to-built-assembly>')
-                return
-        src = sys.argv[1]
-        desktop = os.path.join(os.path.expanduser('~'), 'Desktop')
-        atlas = os.path.join(desktop, 'ATLAS Plugins')
-        os.makedirs(atlas, exist_ok=True)
-        try:
-                shutil.copy2(src, atlas)
-                print(f'Copied {src} to {atlas}')
-        except Exception as e:
-                print('Deploy failed:', e)
-
-
-if __name__ == '__main__':
-        main()
 '''
 
 PLUGIN_MODULE_TEMPLATE = '''using System.ComponentModel.Composition;
@@ -261,13 +235,9 @@ def generate_plugin(name, base_out, include_view=True, include_parameters=True, 
     namespace = name
     target = os.path.join(base_out, name)
     os.makedirs(target, exist_ok=True)
-
-    if workspace_root:
-        deploy_path = os.path.join(workspace_root, 'scripts', 'deploy.py')
-        os.makedirs(os.path.dirname(deploy_path), exist_ok=True)
-        if not os.path.exists(deploy_path):
-            with open(deploy_path, 'w', encoding='utf-8', newline='') as stream:
-                stream.write(DEPLOY_PY_TEMPLATE)
+    resources_dir = os.path.join(target, 'Resources')
+    os.makedirs(resources_dir, exist_ok=True)
+    shutil.copyfile(os.path.join(workspace_root, 'icon.png'), os.path.join(resources_dir, 'icon.png'))
 
     csproj = CS_PROJ_TEMPLATE
     if include_parameters:
