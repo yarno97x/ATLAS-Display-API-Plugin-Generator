@@ -1,8 +1,10 @@
 import os
 import re
+import json
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import shutil
+import uuid
 
 
 CS_PROJ_TEMPLATE = r'''<Project Sdk="Microsoft.NET.Sdk">
@@ -13,9 +15,11 @@ CS_PROJ_TEMPLATE = r'''<Project Sdk="Microsoft.NET.Sdk">
     <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
     <Platforms>x64</Platforms>
+    <ProjectGuid>{{{project_guid}}}</ProjectGuid>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Atlas.DisplayAPI" Version="*" />
+        <Resource Include="Resources\icon.png" />
+    <PackageReference Include="Atlas.DisplayAPI" Version="11.4.4.371-W48" />
     <PackageReference Include="System.ComponentModel.Composition" Version="7.0.0" />
   </ItemGroup>
   <ItemGroup>
@@ -144,8 +148,14 @@ namespace {namespace}
 }}
 '''
 
-VIEW_XAML_TEMPLATE = '''<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+VIEW_XAML_HEADER = '''<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="800"'''
+
+VIEW_XAML_TEMPLATE = VIEW_XAML_HEADER + '''
              x:Class="{namespace}.{view_class}">
     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
         <ItemsControl ItemsSource="{{Binding Parameters}}">
@@ -158,9 +168,9 @@ VIEW_XAML_TEMPLATE = '''<UserControl xmlns="http://schemas.microsoft.com/winfx/2
                 <DataTemplate>
                     <Border BorderBrush="DarkGray" BorderThickness="1" Padding="12" Margin="4">
                         <StackPanel>
-                            <TextBlock Text="{{Binding Name}}" FontWeight="Bold" />
-                            <TextBlock Text="{{Binding Value, StringFormat=F3}}" FontSize="24" />
-                            <TextBlock Text="{{Binding Description}}" />
+                            <TextBlock Text="{{Binding Name}}" FontWeight="Bold" Foreground="White" />
+                            <TextBlock Text="{{Binding Value, StringFormat=F3}}" FontSize="24" Foreground="White" />
+                            <TextBlock Text="{{Binding Description}}" Foreground="White" />
                         </StackPanel>
                     </Border>
                 </DataTemplate>
@@ -170,13 +180,24 @@ VIEW_XAML_TEMPLATE = '''<UserControl xmlns="http://schemas.microsoft.com/winfx/2
 </UserControl>
 '''
 
-BASIC_VIEW_XAML_TEMPLATE = '''<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ASSEMBLY_INFO_TEMPLATE = '''using System.Reflection;
+using System.Runtime.InteropServices;
+
+[assembly: AssemblyTitle("{title}")]
+[assembly: AssemblyDescription("{description}")]
+[assembly: AssemblyProduct("ATLAS Display Plugin")]
+[assembly: ComVisible(false)]
+[assembly: Guid("{assembly_guid}")]
+'''
+
+BASIC_VIEW_XAML_TEMPLATE = VIEW_XAML_HEADER + '''
              x:Class="{namespace}.{view_class}">
     <Grid>
         <TextBlock Text="{view_class}"
                    VerticalAlignment="Center"
-                   HorizontalAlignment="Center" />
+                   HorizontalAlignment="Center"
+                   Foreground="White"
+                   FontSize="20" />
     </Grid>
 </UserControl>
 '''
@@ -195,22 +216,68 @@ namespace {namespace}
 }}
 '''
 
+SLN_TEMPLATE = r'''Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}}") = "{project_name}", "{project_name}\{project_name}.csproj", "{{{project_guid}}}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{{{project_guid}}}.Debug|x64.ActiveCfg = Debug|x64
+		{{{project_guid}}}.Debug|x64.Build.0 = Debug|x64
+		{{{project_guid}}}.Release|x64.ActiveCfg = Release|x64
+		{{{project_guid}}}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+EndGlobal
+'''
+
+
+def settings_path():
+    settings_root = os.environ.get('APPDATA')
+    if not settings_root:
+        settings_root = os.environ.get('XDG_CONFIG_HOME')
+    if not settings_root:
+        settings_root = os.path.join(os.path.expanduser('~'), '.config')
+    return os.path.join(settings_root, 'atlas-display-plugin-generator', 'settings.json')
+
+
+def load_settings():
+    try:
+        with open(settings_path(), 'r', encoding='utf-8') as stream:
+            settings = json.load(stream)
+            return settings if isinstance(settings, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_settings(settings):
+    path = settings_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary_path = f'{path}.tmp'
+    with open(temporary_path, 'w', encoding='utf-8', newline='') as stream:
+        json.dump(settings, stream, indent=2)
+        stream.write('\n')
+    os.replace(temporary_path, path)
+
 
 def default_output_folder():
-    user_home = os.path.expanduser('~')
-    desktop_candidates = [
-        os.path.join(user_home, 'OneDrive', 'Desktop'),
-        os.path.join(user_home, 'Desktop'),
-    ]
-    for desktop in desktop_candidates:
-        if os.path.isdir(desktop):
-            return os.path.join(desktop, 'ATLAS Plugins')
-    return os.path.join(desktop_candidates[0], 'ATLAS Plugins')
+    return load_settings().get('output_folder', '')
+
+
+def default_workspace_root():
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
 def validate_plugin_name(name):
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
         raise ValueError('Plugin name must be a valid C# identifier (letters, numbers, and underscores only).')
+    if 'plugin' not in name.lower():
+        raise ValueError('Plugin name must contain "Plugin" so ATLAS can discover the plugin.')
 
 
 def parse_parameter_names(value):
@@ -225,7 +292,7 @@ def escape_csharp_string(value):
     return value.replace('\\', '\\\\').replace('"', '\\"')
 
 
-def generate_plugin(name, base_out, include_view=True, include_parameters=True, parameter_names=None, parameter_max_count=100, workspace_root=None):
+def generate_plugin(name, base_out, include_view=True, include_parameters=True, parameter_names=None, parameter_max_count=100, workspace_root=None, description=None, library_project=None):
     validate_plugin_name(name)
     if not isinstance(parameter_max_count, int) or parameter_max_count < 1:
         raise ValueError('Maximum parameter count must be a positive integer.')
@@ -233,21 +300,29 @@ def generate_plugin(name, base_out, include_view=True, include_parameters=True, 
     if len(parameter_names) > parameter_max_count:
         raise ValueError('Maximum parameter count cannot be lower than the number of custom parameters.')
     namespace = name
+    workspace_root = os.path.abspath(workspace_root or default_workspace_root())
     target = os.path.join(base_out, name)
     os.makedirs(target, exist_ok=True)
     resources_dir = os.path.join(target, 'Resources')
     os.makedirs(resources_dir, exist_ok=True)
     shutil.copyfile(os.path.join(workspace_root, 'icon.png'), os.path.join(resources_dir, 'icon.png'))
 
-    csproj = CS_PROJ_TEMPLATE
+    project_guid = str(uuid.uuid4()).upper()
+    assembly_guid = str(uuid.uuid4()).upper()
+    description = description or f'{name} ATLAS display plugin'
+
+    csproj = CS_PROJ_TEMPLATE.format(project_guid=project_guid)
     if include_parameters:
-        library_project = os.path.join(workspace_root or '', 'DisplayPluginLibrary', 'DisplayPluginLibrary.csproj')
+        library_project = os.path.abspath(library_project or '')
         if not os.path.isfile(library_project):
-            raise FileNotFoundError(f'DisplayPluginLibrary project not found: {library_project}')
+            raise FileNotFoundError('Select a valid DisplayPluginLibrary.csproj before generating a parameter plugin.')
         library_reference = os.path.relpath(library_project, target).replace(os.sep, '/')
         csproj = csproj.replace(
-            '  <ItemGroup>\n    <PackageReference Include="Atlas.DisplayAPI"',
-            f'  <ItemGroup>\n    <ProjectReference Include="{library_reference}" />\n  </ItemGroup>\n  <ItemGroup>\n    <PackageReference Include="Atlas.DisplayAPI"',
+            '    <PackageReference Include="Atlas.DisplayAPI"',
+            '    <ProjectReference Include="' + library_reference + '">\n'
+            '      <Private>true</Private>\n'
+            '    </ProjectReference>\n'
+            '    <PackageReference Include="Atlas.DisplayAPI"',
         )
 
     viewmodel_template = VIEWMODEL_TEMPLATE if include_parameters else BASIC_VIEWMODEL_TEMPLATE
@@ -268,6 +343,11 @@ def generate_plugin(name, base_out, include_view=True, include_parameters=True, 
 
     files = {
         f'{name}.csproj': csproj,
+        os.path.join('Properties', 'AssemblyInfo.cs'): ASSEMBLY_INFO_TEMPLATE.format(
+            title=name,
+            description=escape_csharp_string(description),
+            assembly_guid=assembly_guid,
+        ),
         'PluginModule.cs': PLUGIN_MODULE_TEMPLATE.format(
             namespace=namespace,
             view_class=f'{name}View',
@@ -295,8 +375,20 @@ def generate_plugin(name, base_out, include_view=True, include_parameters=True, 
         )
 
     for filename, content in files.items():
-        with open(os.path.join(target, filename), 'w', encoding='utf-8', newline='') as stream:
+        file_path = os.path.join(target, filename)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, 'w', encoding='utf-8', newline='') as stream:
             stream.write(content)
+    
+    # Generate .sln file in the base_out folder with the same GUID
+    sln_content = SLN_TEMPLATE.format(
+        project_name=name,
+        project_guid=project_guid,
+    )
+    sln_path = os.path.join(base_out, f'{name}.sln')
+    with open(sln_path, 'w', encoding='utf-8', newline='') as stream:
+        stream.write(sln_content)
+    
     return target
 
 
@@ -306,6 +398,7 @@ class PluginGeneratorApp(tk.Tk):
         self.title('ATLAS Display Plugin Generator')
         self.geometry('600x750')
         self.resizable(True, True)
+        settings = load_settings()
         
         # Create main frame with scrollbar
         main_frame = tk.Frame(self)
@@ -343,15 +436,15 @@ class PluginGeneratorApp(tk.Tk):
         output_frame.pack(fill=tk.X, pady=8)
         
         tk.Label(output_frame, text='Output Folder:').grid(row=0, column=0, sticky='w', pady=6)
-        atlas_plugins_default = default_output_folder()
-        try:
-            os.makedirs(atlas_plugins_default, exist_ok=True)
-        except Exception:
-            pass
-        self.out_var = tk.StringVar(value=atlas_plugins_default)
+        self.out_var = tk.StringVar(value=settings.get('output_folder', ''))
         tk.Entry(output_frame, textvariable=self.out_var, width=45).grid(row=0, column=1, sticky='ew', padx=8)
         tk.Button(output_frame, text='Browse', command=self.browse).grid(row=0, column=2, padx=6)
         output_frame.columnconfigure(1, weight=1)
+
+        tk.Label(output_frame, text='DisplayPluginLibrary.csproj:').grid(row=1, column=0, sticky='w', pady=6)
+        self.library_var = tk.StringVar(value=settings.get('library_project', ''))
+        tk.Entry(output_frame, textvariable=self.library_var, width=45).grid(row=1, column=1, sticky='ew', padx=8)
+        tk.Button(output_frame, text='Browse', command=self.browse_library).grid(row=1, column=2, padx=6)
         
         # === View & Parameter Configuration ===
         config_frame = tk.LabelFrame(scrollable_frame, text='View & Parameter Configuration', padx=8, pady=8)
@@ -406,10 +499,20 @@ class PluginGeneratorApp(tk.Tk):
     def browse(self):
         initial = self.out_var.get()
         if not os.path.isdir(initial):
-            initial = os.path.expanduser('~')
+            initial = os.getcwd()
         d = filedialog.askdirectory(initialdir=initial)
         if d:
             self.out_var.set(d)
+
+    def browse_library(self):
+        initial = self.library_var.get()
+        initial_dir = os.path.dirname(initial) if os.path.isfile(initial) else os.getcwd()
+        path = filedialog.askopenfilename(
+            initialdir=initial_dir,
+            filetypes=[('C# project', '*.csproj'), ('All files', '*.*')],
+        )
+        if path:
+            self.library_var.set(path)
 
     def reset_form(self):
         self.name_var.set('')
@@ -427,8 +530,13 @@ class PluginGeneratorApp(tk.Tk):
             messagebox.showerror('Error', 'Please enter a plugin name')
             return
 
-        base_out = self.out_var.get() or default_output_folder()
+        base_out = self.out_var.get().strip()
+        library_project = self.library_var.get().strip()
         try:
+            if not base_out:
+                raise ValueError('Select an output folder before generating.')
+            if self.add_parameters_var.get() and not library_project:
+                raise ValueError('Select DisplayPluginLibrary.csproj before generating a parameter plugin.')
             parameter_names = parse_parameter_names(self.parameter_text.get('1.0', 'end'))
             parameter_max_count = int(self.parameter_max_var.get())
             if parameter_names and not self.add_parameters_var.get():
@@ -441,8 +549,14 @@ class PluginGeneratorApp(tk.Tk):
                 include_parameters=self.add_parameters_var.get(),
                 parameter_names=parameter_names,
                 parameter_max_count=parameter_max_count,
-                workspace_root=os.getcwd(),
+                workspace_root=default_workspace_root(),
+                description=self.description_var.get().strip() or None,
+                library_project=library_project,
             )
+            save_settings({
+                'output_folder': base_out,
+                'library_project': library_project,
+            })
 
             # Show success message
             success_msg = f'Plugin "{name}" created successfully at:\n{target}'
