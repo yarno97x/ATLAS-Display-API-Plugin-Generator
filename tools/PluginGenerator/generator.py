@@ -10,9 +10,15 @@ def run(args=None):
 	parser.add_argument('--no-view', action='store_true', help='omit the WPF view files')
 	parser.add_argument('--no-parameters', action='store_true', help='omit dynamic parameter support')
 	parser.add_argument('--max-parameters', type=int, default=100, help='maximum number of display parameters')
+	parser.add_argument('--clear-settings', action='store_true', help='clear persisted paths used by the generator and exit')
 	options = parser.parse_args(args)
 
-	from .gui import default_output_folder, default_workspace_root, generate_plugin, load_settings, main, save_settings
+	from .gui import clear_settings, default_output_folder, default_workspace_root, generate_plugin, load_settings, main, save_settings
+
+	if options.clear_settings:
+		clear_settings()
+		print('Persisted generator settings cleared.')
+		return
 
 	if not options.name:
 		main()

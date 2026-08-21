@@ -265,6 +265,13 @@ def save_settings(settings):
     os.replace(temporary_path, path)
 
 
+def clear_settings():
+    try:
+        os.remove(settings_path())
+    except FileNotFoundError:
+        pass
+
+
 def default_output_folder():
     return load_settings().get('output_folder', '')
 
@@ -396,7 +403,7 @@ class PluginGeneratorApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('ATLAS Display Plugin Generator')
-        self.geometry('600x750')
+        self.geometry('560x800')
         self.resizable(True, True)
         settings = load_settings()
         
@@ -490,6 +497,8 @@ class PluginGeneratorApp(tk.Tk):
                  bg='#4CAF50', fg='white', font=('Arial', 10, 'bold'), padx=20, pady=10).pack(side=tk.LEFT, padx=4)
         tk.Button(button_frame, text='Reset', command=self.reset_form, 
                  bg='#2196F3', fg='white', font=('Arial', 10), padx=20, pady=10).pack(side=tk.LEFT, padx=4)
+        tk.Button(button_frame, text='Clear Saved Paths', command=self.clear_saved_paths,
+             bg='#FF9800', fg='white', font=('Arial', 10), padx=20, pady=10).pack(side=tk.LEFT, padx=4)
         tk.Button(button_frame, text='Exit', command=self.quit, 
                  bg='#f44336', fg='white', font=('Arial', 10), padx=20, pady=10).pack(side=tk.LEFT, padx=4)
         
@@ -523,6 +532,14 @@ class PluginGeneratorApp(tk.Tk):
         self.add_parameters_var.set(True)
         self.open_folder_var.set(True)
         messagebox.showinfo('Reset', 'Form has been reset to default values')
+
+    def clear_saved_paths(self):
+        if not messagebox.askyesno('Clear Saved Paths', 'Delete the persisted output and library paths?'):
+            return
+        clear_settings()
+        self.out_var.set('')
+        self.library_var.set('')
+        messagebox.showinfo('Clear Saved Paths', 'Persisted paths were cleared.')
 
     def generate(self):
         name = self.name_var.get().strip()
