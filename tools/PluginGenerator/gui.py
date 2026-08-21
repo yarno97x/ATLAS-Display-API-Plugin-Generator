@@ -302,8 +302,9 @@ def generate_plugin(name, base_out, include_view=True, include_parameters=True, 
     namespace = name
     workspace_root = os.path.abspath(workspace_root or default_workspace_root())
     target = os.path.join(base_out, name)
-    os.makedirs(target, exist_ok=True)
-    resources_dir = os.path.join(target, 'Resources')
+    project_directory = os.path.join(target, name)
+    os.makedirs(project_directory, exist_ok=True)
+    resources_dir = os.path.join(project_directory, 'Resources')
     os.makedirs(resources_dir, exist_ok=True)
     shutil.copyfile(os.path.join(workspace_root, 'icon.png'), os.path.join(resources_dir, 'icon.png'))
 
@@ -316,7 +317,7 @@ def generate_plugin(name, base_out, include_view=True, include_parameters=True, 
         library_project = os.path.abspath(library_project or '')
         if not os.path.isfile(library_project):
             raise FileNotFoundError('Select a valid DisplayPluginLibrary.csproj before generating a parameter plugin.')
-        library_reference = os.path.relpath(library_project, target).replace(os.sep, '/')
+        library_reference = os.path.relpath(library_project, project_directory).replace(os.sep, '/')
         csproj = csproj.replace(
             '    <PackageReference Include="Atlas.DisplayAPI"',
             '    <ProjectReference Include="' + library_reference + '">\n'
@@ -364,7 +365,6 @@ def generate_plugin(name, base_out, include_view=True, include_parameters=True, 
     if include_parameters:
         files['ParameterViewModel.cs'] = PARAMETER_VIEWMODEL_TEMPLATE.format(namespace=namespace)
     if include_view:
-        os.makedirs(os.path.join(target, 'Resources'), exist_ok=True)
         files[f'{name}View.xaml'] = view_template.format(
             namespace=namespace,
             view_class=f'{name}View',
@@ -375,17 +375,17 @@ def generate_plugin(name, base_out, include_view=True, include_parameters=True, 
         )
 
     for filename, content in files.items():
-        file_path = os.path.join(target, filename)
+        file_path = os.path.join(project_directory, filename)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w', encoding='utf-8', newline='') as stream:
             stream.write(content)
     
-    # Generate .sln file in the base_out folder with the same GUID
+    # Generate the solution beside the nested project folder.
     sln_content = SLN_TEMPLATE.format(
         project_name=name,
         project_guid=project_guid,
     )
-    sln_path = os.path.join(base_out, f'{name}.sln')
+    sln_path = os.path.join(target, f'{name}.sln')
     with open(sln_path, 'w', encoding='utf-8', newline='') as stream:
         stream.write(sln_content)
     
